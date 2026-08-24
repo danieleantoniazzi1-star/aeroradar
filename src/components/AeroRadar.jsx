@@ -4,11 +4,10 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
   const canvasRef = useRef(null)
   const [status, setStatus] = useState('Inizializzazione...')
 
-  // Ref per mantenere i dati senza interrompere o resettare l'animazione Canvas
   const aircraftsRef = useRef([])
   const sweepAngleRef = useRef(0)
 
-  // 1. Fetching dati in background (non riavvia l'animazione)
+  // 1. Fetching con Cache-Buster attivo
   useEffect(() => {
     let isMounted = true
     const MY_WORKER_URL = 'https://aeroradar-proxy.daniele-antoniazzi1.workers.dev'
@@ -18,18 +17,21 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
         const latStr = userLat.toFixed(4)
         const lonStr = userLon.toFixed(4)
         const targetUrl = `https://opendata.adsb.fi/api/v3/lat/${latStr}/lon/${lonStr}/dist/${rangeNm}`
-
+        
+        // Timestamp univoco per bypassare la cache locale del browser
+        const timestamp = Date.now()
         const url = import.meta.env.PROD
-          ? `${MY_WORKER_URL}?url=${encodeURIComponent(targetUrl)}`
-          : `/api-adsb/api/v3/lat/${latStr}/lon/${lonStr}/dist/${rangeNm}`
+          ? `${MY_WORKER_URL}?url=${encodeURIComponent(targetUrl)}&_t=${timestamp}`
+          : `/api-adsb/api/v3/lat/${latStr}/lon/${lonStr}/dist/${rangeNm}?_t=${timestamp}`
 
-        const res = await fetch(url)
+        const res = await fetch(url, { cache: 'no-store' })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
         const data = await res.json()
         const rawList = data?.aircraft || data?.ac
 
         if (isMounted && Array.isArray(rawList)) {
+          const now = Date.now()
           const parsed = rawList
             .map((s) => ({
               icao24: s.hex,
@@ -39,11 +41,11 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
               altitudeFt: typeof s.alt_baro === 'number' ? s.alt_baro : (s.alt_geom || 0),
               velocityKts: Math.round(s.gs || 0),
               heading: s.track || s.mag_heading || 0,
-              verticalRate: s.baro_rate || 0
+              verticalRate: s.baro_rate || 0,
+              lastUpdated: now
             }))
             .filter((a) => a.lat != null && a.lon != null)
 
-          // Mantiene gli aerei a schermo senza azzerarli se un ciclo singolo restituisce vuoto
           if (parsed.length > 0) {
             aircraftsRef.current = parsed
             setStatus(`ONLINE • ${parsed.length} bersagli agganciati`)
@@ -69,7 +71,7 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
     }
   }, [userLat, userLon, rangeNm])
 
-  // 2. Loop di rendering a 60 FPS continuo (fluido e senza scatti)
+  // 2. Loop Canvas a 60 FPS con movimento continuo (Dead Reckoning)
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -82,6 +84,7 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
       const centerX = width / 2
       const centerY = height / 2
       const radius = Math.min(centerX, centerY) - 25
+      const now = Date.now()
 
       ctx.fillStyle = '#020617'
       ctx.fillRect(0, 0, width, height)
@@ -119,7 +122,7 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
       ctx.fillText('E', centerX + radius + 12, centerY + 4)
       ctx.fillText('W', centerX - radius - 12, centerY + 4)
 
-      // Rotazione della lancetta continua
+      // Spazzamento radar
       sweepAngleRef.current += 0.025
       if (sweepAngleRef.current >= 2 * Math.PI) sweepAngleRef.current = 0
 
@@ -150,10 +153,21 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
       ctx.stroke()
       ctx.restore()
 
-      // Tracciamento Aerei
+      // Tracciamento ed Estrapolazione del Movimento
       aircraftsRef.current.forEach((ac) => {
-        const dLat = (ac.lat - userLat) * 60
-        const dLon = (ac.lon - userLon) * 60 * Math.cos((userLat * Math.PI) / 180)
+        // Calcola la distanza percorsa in NM dall'ultimo aggiornamento ricevibile
+        const dtSeconds = Math.max(0, (now - ac.lastUpdated) / 1000)
+        const distTraveledNm = (ac.velocityKts / 3600) * dtSeconds
+
+        const headingRad = (ac.heading * Math.PI) / 180
+        const dLatEst = (distTraveledNm * Math.cos(headingRad)) / 60
+        const dLonEst = (distTraveledNm * Math.sin(headingRad)) / (60 * Math.cos((userLat * Math.PI) / 180))
+
+        const currentLat = ac.lat + dLatEst
+        const currentLon = ac.lon + dLonEst
+
+        const dLat = (currentLat - userLat) * 60
+        const dLon = (currentLon - userLon) * 60 * Math.cos((userLat * Math.PI) / 180)
         const distNm = Math.sqrt(dLat * dLat + dLon * dLon)
 
         if (distNm <= rangeNm) {
@@ -162,7 +176,7 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
 
           ctx.save()
           ctx.translate(px, py)
-          ctx.rotate((ac.heading * Math.PI) / 180)
+          ctx.rotate(headingRad)
 
           const color = ac.altitudeFt > 10000 ? '#38bdf8' : '#fbbf24'
           ctx.fillStyle = color
