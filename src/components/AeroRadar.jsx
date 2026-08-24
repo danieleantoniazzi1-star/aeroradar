@@ -12,23 +12,35 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
       try {
         const latStr = userLat.toFixed(4)
         const lonStr = userLon.toFixed(4)
-
-        // URL dell'API di destinazione
         const targetUrl = `https://opendata.adsb.fi/api/v3/lat/${latStr}/lon/${lonStr}/dist/${rangeNm}`
 
-        // In PROD (GitHub Pages) incapsuliamo la chiamata nel CORS Proxy
-        const url = import.meta.env.PROD
-          ? `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`
-          : `/api-adsb/api/v3/lat/${latStr}/lon/${lonStr}/dist/${rangeNm}`
+        let res = null
 
-        const res = await fetch(url)
+        if (import.meta.env.PROD) {
+          // Catena di fallback CORS Proxy per GitHub Pages
+          const proxyList = [
+            `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
+            `https://corsproxy.org/?${encodeURIComponent(targetUrl)}`,
+            `https://thingproxy.freeboard.io/fetch/${targetUrl}`
+          ]
 
-        if (res.status === 429) {
-          if (isMounted) setStatus('RATE LIMIT • Pausa 10s')
-          return
+          for (const proxyUrl of proxyList) {
+            try {
+              const r = await fetch(proxyUrl)
+              if (r.ok) {
+                res = r
+                break
+              }
+            } catch {
+              // Prova il proxy successivo
+            }
+          }
+        } else {
+          // Modalità Sviluppo locale (Proxy Vite)
+          res = await fetch(`/api-adsb/api/v3/lat/${latStr}/lon/${lonStr}/dist/${rangeNm}`)
         }
 
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        if (!res || !res.ok) throw new Error('Tutti i server proxy non raggiungibili')
 
         const data = await res.json()
         const rawList = data?.aircraft || data?.ac
