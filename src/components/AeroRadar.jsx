@@ -12,43 +12,41 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
       try {
         const latStr = userLat.toFixed(4)
         const lonStr = userLon.toFixed(4)
+        const targetUrl = `https://opendata.adsb.fi/api/v3/lat/${latStr}/lon/${lonStr}/dist/${rangeNm}`
 
-        // API con supporto CORS nativo per browser + Fallback
-        const endpoints = [
-          `https://api.airplanes.live/v2/point/${latStr}/${lonStr}/${rangeNm}`,
-          `https://api.adsb.lol/v2/point/${latStr}/${lonStr}/${rangeNm}`,
-          `https://api.allorigins.win/get?url=${encodeURIComponent(`https://opendata.adsb.fi/api/v3/lat/${latStr}/lon/${lonStr}/dist/${rangeNm}`)}`
-        ]
+        let data = null
 
-        let parsedData = null
+        if (import.meta.env.PROD) {
+          // GitHub Pages: Lista di proxy per aggirare il blocco 403 / CORS di GitHub.io
+          const proxies = [
+            `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
+            `https://cors.bridge.workers.dev/${targetUrl}`,
+            `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`
+          ]
 
-        for (const url of endpoints) {
-          try {
-            const res = await fetch(url)
-            if (!res.ok) continue
-
-            const data = await res.json()
-
-            // Gestione allorigins payload ({ contents: "{...}" })
-            let rawObj = data
-            if (data.contents && typeof data.contents === 'string') {
-              try { rawObj = JSON.parse(data.contents) } catch {}
+          for (const proxyUrl of proxies) {
+            try {
+              const res = await fetch(proxyUrl)
+              if (res.ok) {
+                data = await res.json()
+                if (data?.aircraft || data?.ac) break
+              }
+            } catch {
+              // Silenzioso: tenta il proxy successivo in caso di timeout/522
             }
-
-            const rawList = rawObj?.aircraft || rawObj?.ac
-            if (Array.isArray(rawList)) {
-              parsedData = rawList
-              break
-            }
-          } catch {
-            // Prova il prossimo endpoint
           }
+        } else {
+          // Localhost: Proxy integrato di Vite
+          const res = await fetch(`/api-adsb/api/v3/lat/${latStr}/lon/${lonStr}/dist/${rangeNm}`)
+          if (res.ok) data = await res.json()
         }
 
         if (!isMounted) return
 
-        if (parsedData) {
-          const parsed = parsedData
+        const rawList = data?.aircraft || data?.ac
+
+        if (Array.isArray(rawList)) {
+          const parsed = rawList
             .map((s) => ({
               icao24: s.hex,
               callsign: s.flight?.trim() || s.hex?.toUpperCase() || 'N/A',
@@ -68,15 +66,14 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
         }
       } catch (err) {
         if (isMounted) {
-          console.error('Errore Fetch Voli:', err)
-          setStatus('SINCRO IN CORSO • Attesa ciclo')
+          setStatus('SINCRO IN CORSO • Attesa ciclo (15s)')
         }
       }
     }
 
     fetchAircraft()
-    // Interval impostato a 12s per evitare rate limiting dai server comunitari
-    const interval = setInterval(fetchAircraft, 12000)
+    // Intervallo a 15s per rispettare le quote di traffico ed evitare ban IP
+    const interval = setInterval(fetchAircraft, 15000)
 
     return () => {
       isMounted = false
