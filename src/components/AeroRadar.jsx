@@ -5,7 +5,6 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
   const [aircrafts, setAircrafts] = useState([])
   const [status, setStatus] = useState('Inizializzazione...')
 
-  // Fetch dati voli tramite Vite Proxy verso adsb.fi
   useEffect(() => {
     let isMounted = true
 
@@ -13,12 +12,17 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
       try {
         const latStr = userLat.toFixed(4)
         const lonStr = userLon.toFixed(4)
-        const url = `/api-adsb/api/v3/lat/${latStr}/lon/${lonStr}/dist/${rangeNm}`
+
+        const baseUrl = import.meta.env.PROD 
+          ? 'https://opendata.adsb.fi' 
+          : '/api-adsb'
+
+        const url = `${baseUrl}/api/v3/lat/${latStr}/lon/${lonStr}/dist/${rangeNm}`
 
         const res = await fetch(url)
 
         if (res.status === 429) {
-          if (isMounted) setStatus('RATE LIMIT • Pausa 10s')
+          if (isMounted) setStatus('RATE LIMIT â€¢ Pausa 10s')
           return
         }
 
@@ -43,16 +47,16 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
               .filter((a) => a.lat != null && a.lon != null)
 
             setAircrafts(parsed)
-            setStatus(`ONLINE • ${parsed.length} bersagli agganciati`)
+            setStatus(`ONLINE â€¢ ${parsed.length} bersagli agganciati`)
           } else {
             setAircrafts([])
-            setStatus('ONLINE • 0 bersagli nell\'area')
+            setStatus('ONLINE â€¢ 0 bersagli nell\'area')
           }
         }
       } catch (err) {
         if (isMounted) {
           console.error('Errore ADS-B API:', err)
-          setStatus('SINCRO IN CORSO • Attesa ciclo')
+          setStatus('SINCRO IN CORSO â€¢ Attesa ciclo')
         }
       }
     }
@@ -66,7 +70,6 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
     }
   }, [userLat, userLon, rangeNm])
 
-  // Canvas Render Loop (Radar TCAS + Sweeper Animatato)
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -81,11 +84,9 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
       const centerY = height / 2
       const radius = Math.min(centerX, centerY) - 25
 
-      // Sfondo Nero Avionico
       ctx.fillStyle = '#020617'
       ctx.fillRect(0, 0, width, height)
 
-      // Cerchi Concentrici di Portata (Range Rings)
       ctx.strokeStyle = 'rgba(16, 185, 129, 0.4)'
       ctx.lineWidth = 1.5
       ctx.setLineDash([4, 4])
@@ -95,7 +96,6 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
         ctx.arc(centerX, centerY, ringR, 0, 2 * Math.PI)
         ctx.stroke()
 
-        // Etichette Distanza (NM)
         ctx.fillStyle = '#10b981'
         ctx.font = '10px "IBM Plex Mono", monospace'
         const labelNm = Math.round(rangeNm * rRatio)
@@ -103,7 +103,6 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
       })
       ctx.setLineDash([])
 
-      // Assi N/S/E/W
       ctx.beginPath()
       ctx.moveTo(centerX, centerY - radius)
       ctx.lineTo(centerX, centerY + radius)
@@ -111,7 +110,6 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
       ctx.lineTo(centerX + radius, centerY)
       ctx.stroke()
 
-      // Punti Cardinali
       ctx.fillStyle = '#34d399'
       ctx.font = 'bold 12px monospace'
       ctx.textAlign = 'center'
@@ -120,7 +118,6 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
       ctx.fillText('E', centerX + radius + 12, centerY + 4)
       ctx.fillText('W', centerX - radius - 12, centerY + 4)
 
-      // Sweeper Rotante
       sweepAngle += 0.025
       if (sweepAngle >= 2 * Math.PI) sweepAngle = 0
 
@@ -129,7 +126,6 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
       const sweepX = radius * Math.sin(sweepAngle)
       const sweepY = -radius * Math.cos(sweepAngle)
 
-      // Cono di Scia Sweeper (60 gradi di ampiezza dietro la barra)
       const trailAngle = Math.PI / 3
       const stopRatio = trailAngle / (2 * Math.PI)
 
@@ -143,7 +139,6 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
       ctx.arc(0, 0, radius, 0, 2 * Math.PI)
       ctx.fill()
 
-      // Linea di Scansione Principale
       ctx.strokeStyle = '#34d399'
       ctx.lineWidth = 2
       ctx.beginPath()
@@ -152,7 +147,6 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
       ctx.stroke()
       ctx.restore()
 
-      // Disegno Target Aerei
       aircrafts.forEach((ac) => {
         const dLat = (ac.lat - userLat) * 60
         const dLon = (ac.lon - userLon) * 60 * Math.cos((userLat * Math.PI) / 180)
@@ -162,7 +156,6 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
           const px = centerX + (dLon / rangeNm) * radius
           const py = centerY - (dLat / rangeNm) * radius
 
-          // Icona Aereo
           ctx.save()
           ctx.translate(px, py)
           ctx.rotate((ac.heading * Math.PI) / 180)
@@ -182,8 +175,7 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
           ctx.stroke()
           ctx.restore()
 
-          // Etichetta Info TCAS
-          const verticalTrend = ac.verticalRate > 128 ? '?' : ac.verticalRate < -128 ? '?' : '='
+          const verticalTrend = ac.verticalRate > 128 ? 'â†‘' : ac.verticalRate < -128 ? 'â†“' : '='
           ctx.fillStyle = '#fef08a'
           ctx.textAlign = 'left'
           ctx.font = 'bold 11px monospace'
@@ -195,7 +187,6 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
         }
       })
 
-      // Punto Posizione Utente
       ctx.fillStyle = '#ef4444'
       ctx.beginPath()
       ctx.arc(centerX, centerY, 4, 0, 2 * Math.PI)
