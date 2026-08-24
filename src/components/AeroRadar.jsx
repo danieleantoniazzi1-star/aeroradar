@@ -10,30 +10,53 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
 
     const fetchAircraft = async () => {
       try {
-        const latStr = userLat.toFixed(4)
-        const lonStr = userLon.toFixed(4)
+        let parsed = []
 
-        const baseUrl = import.meta.env.PROD 
-          ? 'https://opendata.adsb.fi' 
-          : '/api-adsb'
+        if (import.meta.env.PROD) {
+          // --- PRODUZIONE (GitHub Pages): API OpenSky Network (CORS abilitato nativamente) ---
+          const latDelta = (rangeNm / 60) * 1.2
+          const lonDelta = (rangeNm / (60 * Math.cos((userLat * Math.PI) / 180))) * 1.2
 
-        const url = `${baseUrl}/api/v3/lat/${latStr}/lon/${lonStr}/dist/${rangeNm}`
+          const lamin = (userLat - latDelta).toFixed(4)
+          const lamax = (userLat + latDelta).toFixed(4)
+          const lomin = (userLon - lonDelta).toFixed(4)
+          const lomax = (userLon + lonDelta).toFixed(4)
 
-        const res = await fetch(url)
+          const url = `https://opensky-network.org/api/states/all?lamin=${lamin}&lamax=${lamax}&lomin=${lomin}&lomax=${lomax}`
 
-        if (res.status === 429) {
-          if (isMounted) setStatus('RATE LIMIT • Pausa 10s')
-          return
-        }
+          const res = await fetch(url)
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          const data = await res.json()
 
-        const data = await res.json()
-        const rawList = data?.aircraft || data?.ac
+          if (data && data.states) {
+            parsed = data.states
+              .map((s) => ({
+                icao24: s[0],
+                callsign: s[1]?.trim() || s[0].toUpperCase(),
+                lon: s[5],
+                lat: s[6],
+                altitudeFt: Math.round((s[7] || s[13] || 0) * 3.28084), // Metri -> Piedi
+                velocityKts: Math.round((s[9] || 0) * 1.94384), // m/s -> Nodi
+                heading: s[10] || 0,
+                verticalRate: Math.round((s[11] || 0) * 196.85) // m/s -> ft/min
+              }))
+              .filter((a) => a.lat != null && a.lon != null)
+          }
+        } else {
+          // --- SVILUPPO (Localhost): Vite Proxy locale ---
+          const latStr = userLat.toFixed(4)
+          const lonStr = userLon.toFixed(4)
+          const url = `/api-adsb/api/v3/lat/${latStr}/lon/${lonStr}/dist/${rangeNm}`
 
-        if (isMounted) {
+          const res = await fetch(url)
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+          const data = await res.json()
+          const rawList = data?.aircraft || data?.ac
+
           if (Array.isArray(rawList)) {
-            const parsed = rawList
+            parsed = rawList
               .map((s) => ({
                 icao24: s.hex,
                 callsign: s.flight?.trim() || s.hex?.toUpperCase() || 'N/A',
@@ -45,24 +68,24 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
                 verticalRate: s.baro_rate || 0
               }))
               .filter((a) => a.lat != null && a.lon != null)
-
-            setAircrafts(parsed)
-            setStatus(`ONLINE • ${parsed.length} bersagli agganciati`)
-          } else {
-            setAircrafts([])
-            setStatus('ONLINE • 0 bersagli nell\'area')
           }
+        }
+
+        if (isMounted) {
+          setAircrafts(parsed)
+          setStatus(`ONLINE • ${parsed.length} bersagli agganciati`)
         }
       } catch (err) {
         if (isMounted) {
-          console.error('Errore ADS-B API:', err)
-          setStatus('SINCRO IN CORSO • Attesa ciclo')
+          console.error('Errore Fetch Voli:', err)
+          setStatus('SINCRO IN CORSO • Attesa ciclo (10s)')
         }
       }
     }
 
     fetchAircraft()
-    const interval = setInterval(fetchAircraft, 8000)
+    // Interval impostato a 10s per rispettare i limiti di rate di OpenSky
+    const interval = setInterval(fetchAircraft, 10000)
 
     return () => {
       isMounted = false
@@ -70,6 +93,7 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
     }
   }, [userLat, userLon, rangeNm])
 
+  // Rendering Grafico Canvas Radar
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
