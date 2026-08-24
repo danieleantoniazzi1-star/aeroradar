@@ -2,13 +2,15 @@ import React, { useEffect, useRef, useState } from 'react'
 
 export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 30 }) {
   const canvasRef = useRef(null)
-  const [aircrafts, setAircrafts] = useState([])
   const [status, setStatus] = useState('Inizializzazione...')
 
+  // Ref per mantenere i dati senza interrompere o resettare l'animazione Canvas
+  const aircraftsRef = useRef([])
+  const sweepAngleRef = useRef(0)
+
+  // 1. Fetching dati in background (non riavvia l'animazione)
   useEffect(() => {
     let isMounted = true
-
-    // Il tuo proxy privato Cloudflare con cache distribuita
     const MY_WORKER_URL = 'https://aeroradar-proxy.daniele-antoniazzi1.workers.dev'
 
     const fetchAircraft = async () => {
@@ -27,38 +29,39 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
         const data = await res.json()
         const rawList = data?.aircraft || data?.ac
 
-        if (isMounted) {
-          if (Array.isArray(rawList)) {
-            const parsed = rawList
-              .map((s) => ({
-                icao24: s.hex,
-                callsign: s.flight?.trim() || s.hex?.toUpperCase() || 'N/A',
-                lon: s.lon,
-                lat: s.lat,
-                altitudeFt: typeof s.alt_baro === 'number' ? s.alt_baro : (s.alt_geom || 0),
-                velocityKts: Math.round(s.gs || 0),
-                heading: s.track || s.mag_heading || 0,
-                verticalRate: s.baro_rate || 0
-              }))
-              .filter((a) => a.lat != null && a.lon != null)
+        if (isMounted && Array.isArray(rawList)) {
+          const parsed = rawList
+            .map((s) => ({
+              icao24: s.hex,
+              callsign: s.flight?.trim() || s.hex?.toUpperCase() || 'N/A',
+              lon: s.lon,
+              lat: s.lat,
+              altitudeFt: typeof s.alt_baro === 'number' ? s.alt_baro : (s.alt_geom || 0),
+              velocityKts: Math.round(s.gs || 0),
+              heading: s.track || s.mag_heading || 0,
+              verticalRate: s.baro_rate || 0
+            }))
+            .filter((a) => a.lat != null && a.lon != null)
 
-            setAircrafts(parsed)
+          // Mantiene gli aerei a schermo senza azzerarli se un ciclo singolo restituisce vuoto
+          if (parsed.length > 0) {
+            aircraftsRef.current = parsed
             setStatus(`ONLINE • ${parsed.length} bersagli agganciati`)
+          } else if (aircraftsRef.current.length > 0) {
+            setStatus(`ONLINE • ${aircraftsRef.current.length} bersagli (mantenimento)`)
           } else {
-            setAircrafts([])
             setStatus('ONLINE • 0 bersagli nell\'area')
           }
         }
       } catch (err) {
-        if (isMounted) {
-          console.error('Errore Fetch Voli:', err)
+        if (isMounted && aircraftsRef.current.length === 0) {
           setStatus('SINCRO IN CORSO • Attesa ciclo')
         }
       }
     }
 
     fetchAircraft()
-    const interval = setInterval(fetchAircraft, 10000)
+    const interval = setInterval(fetchAircraft, 8000)
 
     return () => {
       isMounted = false
@@ -66,12 +69,12 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
     }
   }, [userLat, userLon, rangeNm])
 
+  // 2. Loop di rendering a 60 FPS continuo (fluido e senza scatti)
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
     let animationFrameId
-    let sweepAngle = 0
 
     const render = () => {
       const width = canvas.width
@@ -83,6 +86,7 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
       ctx.fillStyle = '#020617'
       ctx.fillRect(0, 0, width, height)
 
+      // Anelli di portata
       ctx.strokeStyle = 'rgba(16, 185, 129, 0.4)'
       ctx.lineWidth = 1.5
       ctx.setLineDash([4, 4])
@@ -99,6 +103,7 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
       })
       ctx.setLineDash([])
 
+      // Assi Cardinali
       ctx.beginPath()
       ctx.moveTo(centerX, centerY - radius)
       ctx.lineTo(centerX, centerY + radius)
@@ -114,9 +119,11 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
       ctx.fillText('E', centerX + radius + 12, centerY + 4)
       ctx.fillText('W', centerX - radius - 12, centerY + 4)
 
-      sweepAngle += 0.025
-      if (sweepAngle >= 2 * Math.PI) sweepAngle = 0
+      // Rotazione della lancetta continua
+      sweepAngleRef.current += 0.025
+      if (sweepAngleRef.current >= 2 * Math.PI) sweepAngleRef.current = 0
 
+      const sweepAngle = sweepAngleRef.current
       ctx.save()
       ctx.translate(centerX, centerY)
       const sweepX = radius * Math.sin(sweepAngle)
@@ -143,7 +150,8 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
       ctx.stroke()
       ctx.restore()
 
-      aircrafts.forEach((ac) => {
+      // Tracciamento Aerei
+      aircraftsRef.current.forEach((ac) => {
         const dLat = (ac.lat - userLat) * 60
         const dLon = (ac.lon - userLon) * 60 * Math.cos((userLat * Math.PI) / 180)
         const distNm = Math.sqrt(dLat * dLat + dLon * dLon)
@@ -183,6 +191,7 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
         }
       })
 
+      // Posizione Utente
       ctx.fillStyle = '#ef4444'
       ctx.beginPath()
       ctx.arc(centerX, centerY, 4, 0, 2 * Math.PI)
@@ -193,7 +202,7 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
 
     render()
     return () => cancelAnimationFrame(animationFrameId)
-  }, [aircrafts, userLat, userLon, rangeNm])
+  }, [userLat, userLon, rangeNm])
 
   return (
     <div
