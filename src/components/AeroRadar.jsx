@@ -12,60 +12,59 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
       try {
         const latStr = userLat.toFixed(4)
         const lonStr = userLon.toFixed(4)
-        const targetUrl = `https://opendata.adsb.fi/api/v3/lat/${latStr}/lon/${lonStr}/dist/${rangeNm}`
 
-        let res = null
+        // API con supporto CORS nativo per browser + Fallback
+        const endpoints = [
+          `https://api.airplanes.live/v2/point/${latStr}/${lonStr}/${rangeNm}`,
+          `https://api.adsb.lol/v2/point/${latStr}/${lonStr}/${rangeNm}`,
+          `https://api.allorigins.win/get?url=${encodeURIComponent(`https://opendata.adsb.fi/api/v3/lat/${latStr}/lon/${lonStr}/dist/${rangeNm}`)}`
+        ]
 
-        if (import.meta.env.PROD) {
-          // Catena di fallback CORS Proxy per GitHub Pages
-          const proxyList = [
-            `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
-            `https://corsproxy.org/?${encodeURIComponent(targetUrl)}`,
-            `https://thingproxy.freeboard.io/fetch/${targetUrl}`
-          ]
+        let parsedData = null
 
-          for (const proxyUrl of proxyList) {
-            try {
-              const r = await fetch(proxyUrl)
-              if (r.ok) {
-                res = r
-                break
-              }
-            } catch {
-              // Prova il proxy successivo
+        for (const url of endpoints) {
+          try {
+            const res = await fetch(url)
+            if (!res.ok) continue
+
+            const data = await res.json()
+
+            // Gestione allorigins payload ({ contents: "{...}" })
+            let rawObj = data
+            if (data.contents && typeof data.contents === 'string') {
+              try { rawObj = JSON.parse(data.contents) } catch {}
             }
+
+            const rawList = rawObj?.aircraft || rawObj?.ac
+            if (Array.isArray(rawList)) {
+              parsedData = rawList
+              break
+            }
+          } catch {
+            // Prova il prossimo endpoint
           }
-        } else {
-          // Modalità Sviluppo locale (Proxy Vite)
-          res = await fetch(`/api-adsb/api/v3/lat/${latStr}/lon/${lonStr}/dist/${rangeNm}`)
         }
 
-        if (!res || !res.ok) throw new Error('Tutti i server proxy non raggiungibili')
+        if (!isMounted) return
 
-        const data = await res.json()
-        const rawList = data?.aircraft || data?.ac
+        if (parsedData) {
+          const parsed = parsedData
+            .map((s) => ({
+              icao24: s.hex,
+              callsign: s.flight?.trim() || s.hex?.toUpperCase() || 'N/A',
+              lon: s.lon,
+              lat: s.lat,
+              altitudeFt: typeof s.alt_baro === 'number' ? s.alt_baro : (s.alt_geom || 0),
+              velocityKts: Math.round(s.gs || 0),
+              heading: s.track || s.mag_heading || 0,
+              verticalRate: s.baro_rate || 0
+            }))
+            .filter((a) => a.lat != null && a.lon != null)
 
-        if (isMounted) {
-          if (Array.isArray(rawList)) {
-            const parsed = rawList
-              .map((s) => ({
-                icao24: s.hex,
-                callsign: s.flight?.trim() || s.hex?.toUpperCase() || 'N/A',
-                lon: s.lon,
-                lat: s.lat,
-                altitudeFt: typeof s.alt_baro === 'number' ? s.alt_baro : (s.alt_geom || 0),
-                velocityKts: Math.round(s.gs || 0),
-                heading: s.track || s.mag_heading || 0,
-                verticalRate: s.baro_rate || 0
-              }))
-              .filter((a) => a.lat != null && a.lon != null)
-
-            setAircrafts(parsed)
-            setStatus(`ONLINE • ${parsed.length} bersagli agganciati`)
-          } else {
-            setAircrafts([])
-            setStatus('ONLINE • 0 bersagli nell\'area')
-          }
+          setAircrafts(parsed)
+          setStatus(`ONLINE • ${parsed.length} bersagli agganciati`)
+        } else {
+          setStatus('SINCRO IN CORSO • Re-instradamento server...')
         }
       } catch (err) {
         if (isMounted) {
@@ -76,7 +75,8 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
     }
 
     fetchAircraft()
-    const interval = setInterval(fetchAircraft, 8000)
+    // Interval impostato a 12s per evitare rate limiting dai server comunitari
+    const interval = setInterval(fetchAircraft, 12000)
 
     return () => {
       isMounted = false
