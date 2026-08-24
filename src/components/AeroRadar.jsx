@@ -8,72 +8,57 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
   useEffect(() => {
     let isMounted = true
 
+    // Il tuo proxy privato Cloudflare con cache distribuita
+    const MY_WORKER_URL = 'https://aeroradar-proxy.daniele-antoniazzi1.workers.dev'
+
     const fetchAircraft = async () => {
       try {
         const latStr = userLat.toFixed(4)
         const lonStr = userLon.toFixed(4)
         const targetUrl = `https://opendata.adsb.fi/api/v3/lat/${latStr}/lon/${lonStr}/dist/${rangeNm}`
 
-        let data = null
+        const url = import.meta.env.PROD
+          ? `${MY_WORKER_URL}?url=${encodeURIComponent(targetUrl)}`
+          : `/api-adsb/api/v3/lat/${latStr}/lon/${lonStr}/dist/${rangeNm}`
 
-        if (import.meta.env.PROD) {
-          // GitHub Pages: Lista di proxy per aggirare il blocco 403 / CORS di GitHub.io
-          const proxies = [
-            `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
-            `https://cors.bridge.workers.dev/${targetUrl}`,
-            `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`
-          ]
+        const res = await fetch(url)
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
-          for (const proxyUrl of proxies) {
-            try {
-              const res = await fetch(proxyUrl)
-              if (res.ok) {
-                data = await res.json()
-                if (data?.aircraft || data?.ac) break
-              }
-            } catch {
-              // Silenzioso: tenta il proxy successivo in caso di timeout/522
-            }
-          }
-        } else {
-          // Localhost: Proxy integrato di Vite
-          const res = await fetch(`/api-adsb/api/v3/lat/${latStr}/lon/${lonStr}/dist/${rangeNm}`)
-          if (res.ok) data = await res.json()
-        }
-
-        if (!isMounted) return
-
+        const data = await res.json()
         const rawList = data?.aircraft || data?.ac
 
-        if (Array.isArray(rawList)) {
-          const parsed = rawList
-            .map((s) => ({
-              icao24: s.hex,
-              callsign: s.flight?.trim() || s.hex?.toUpperCase() || 'N/A',
-              lon: s.lon,
-              lat: s.lat,
-              altitudeFt: typeof s.alt_baro === 'number' ? s.alt_baro : (s.alt_geom || 0),
-              velocityKts: Math.round(s.gs || 0),
-              heading: s.track || s.mag_heading || 0,
-              verticalRate: s.baro_rate || 0
-            }))
-            .filter((a) => a.lat != null && a.lon != null)
+        if (isMounted) {
+          if (Array.isArray(rawList)) {
+            const parsed = rawList
+              .map((s) => ({
+                icao24: s.hex,
+                callsign: s.flight?.trim() || s.hex?.toUpperCase() || 'N/A',
+                lon: s.lon,
+                lat: s.lat,
+                altitudeFt: typeof s.alt_baro === 'number' ? s.alt_baro : (s.alt_geom || 0),
+                velocityKts: Math.round(s.gs || 0),
+                heading: s.track || s.mag_heading || 0,
+                verticalRate: s.baro_rate || 0
+              }))
+              .filter((a) => a.lat != null && a.lon != null)
 
-          setAircrafts(parsed)
-          setStatus(`ONLINE • ${parsed.length} bersagli agganciati`)
-        } else {
-          setStatus('SINCRO IN CORSO • Re-instradamento server...')
+            setAircrafts(parsed)
+            setStatus(`ONLINE • ${parsed.length} bersagli agganciati`)
+          } else {
+            setAircrafts([])
+            setStatus('ONLINE • 0 bersagli nell\'area')
+          }
         }
       } catch (err) {
         if (isMounted) {
-          setStatus('SINCRO IN CORSO • Attesa ciclo (15s)')
+          console.error('Errore Fetch Voli:', err)
+          setStatus('SINCRO IN CORSO • Attesa ciclo')
         }
       }
     }
 
     fetchAircraft()
-    // Intervallo a 15s per rispettare le quote di traffico ed evitare ban IP
-    const interval = setInterval(fetchAircraft, 15000)
+    const interval = setInterval(fetchAircraft, 10000)
 
     return () => {
       isMounted = false
