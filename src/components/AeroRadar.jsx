@@ -48,11 +48,11 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
 
           if (parsed.length > 0) {
             aircraftsRef.current = parsed
-            setStatus(`ONLINE • ${parsed.length} bersagli agganciati`)
+            setStatus(`ONLINE • ${parsed.length} velivoli agganciati`)
           } else if (aircraftsRef.current.length > 0) {
-            setStatus(`ONLINE • ${aircraftsRef.current.length} bersagli (mantenimento)`)
+            setStatus(`ONLINE • ${aircraftsRef.current.length} velivoli (mantenimento)`)
           } else {
-            setStatus('ONLINE • 0 bersagli nell\'area')
+            setStatus('ONLINE • 0 velivoli nell\'area')
           }
         }
       } catch (err) {
