@@ -7,7 +7,7 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
   const aircraftsRef = useRef([])
   const sweepAngleRef = useRef(0)
 
-  // 1. Fetching con Cache-Buster attivo
+  // 1. Fetching con Cache-Buster
   useEffect(() => {
     let isMounted = true
     const MY_WORKER_URL = 'https://aeroradar-proxy.daniele-antoniazzi1.workers.dev'
@@ -70,7 +70,7 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
     }
   }, [userLat, userLon, rangeNm])
 
-  // 2. Loop Canvas a 60 FPS
+  // 2. Render Canvas (Risoluzione nativa 800x800)
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -82,7 +82,7 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
       const height = canvas.height
       const centerX = width / 2
       const centerY = height / 2
-      const radius = Math.min(centerX, centerY) - 25
+      const radius = Math.min(centerX, centerY) - 30
       const now = Date.now()
 
       ctx.fillStyle = '#020617'
@@ -99,9 +99,9 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
         ctx.stroke()
 
         ctx.fillStyle = '#10b981'
-        ctx.font = '10px "IBM Plex Mono", monospace'
+        ctx.font = '12px "IBM Plex Mono", monospace'
         const labelNm = Math.round(rangeNm * rRatio)
-        ctx.fillText(`${labelNm} NM`, centerX + 4, centerY - ringR + 12)
+        ctx.fillText(`${labelNm} NM`, centerX + 6, centerY - ringR + 14)
       })
       ctx.setLineDash([])
 
@@ -114,12 +114,12 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
       ctx.stroke()
 
       ctx.fillStyle = '#34d399'
-      ctx.font = 'bold 12px monospace'
+      ctx.font = 'bold 14px monospace'
       ctx.textAlign = 'center'
-      ctx.fillText('N', centerX, centerY - radius - 8)
-      ctx.fillText('S', centerX, centerY + radius + 16)
-      ctx.fillText('E', centerX + radius + 12, centerY + 4)
-      ctx.fillText('W', centerX - radius - 12, centerY + 4)
+      ctx.fillText('N', centerX, centerY - radius - 10)
+      ctx.fillText('S', centerX, centerY + radius + 20)
+      ctx.fillText('E', centerX + radius + 16, centerY + 5)
+      ctx.fillText('W', centerX - radius - 16, centerY + 5)
 
       // Spazzamento radar
       sweepAngleRef.current += 0.025
@@ -182,10 +182,10 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
           ctx.lineWidth = 1.5
 
           ctx.beginPath()
-          ctx.moveTo(0, -8)
-          ctx.lineTo(6, 8)
-          ctx.lineTo(0, 5)
-          ctx.lineTo(-6, 8)
+          ctx.moveTo(0, -9)
+          ctx.lineTo(7, 9)
+          ctx.lineTo(0, 6)
+          ctx.lineTo(-7, 9)
           ctx.closePath()
           ctx.fill()
           ctx.stroke()
@@ -194,19 +194,19 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
           const verticalTrend = ac.verticalRate > 128 ? '↑' : ac.verticalRate < -128 ? '↓' : '='
           ctx.fillStyle = '#fef08a'
           ctx.textAlign = 'left'
-          ctx.font = 'bold 11px monospace'
-          ctx.fillText(ac.callsign, px + 10, py - 3)
+          ctx.font = 'bold 12px monospace'
+          ctx.fillText(ac.callsign, px + 12, py - 2)
 
           ctx.fillStyle = '#94a3b8'
-          ctx.font = '10px monospace'
-          ctx.fillText(`${ac.altitudeFt}ft ${verticalTrend}`, px + 10, py + 9)
+          ctx.font = '11px monospace'
+          ctx.fillText(`${ac.altitudeFt}ft ${verticalTrend}`, px + 12, py + 11)
         }
       })
 
       // Posizione Utente
       ctx.fillStyle = '#ef4444'
       ctx.beginPath()
-      ctx.arc(centerX, centerY, 4, 0, 2 * Math.PI)
+      ctx.arc(centerX, centerY, 5, 0, 2 * Math.PI)
       ctx.fill()
 
       animationFrameId = requestAnimationFrame(render)
@@ -228,20 +228,18 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
         justifyContent: 'center',
         background: '#020617',
         overflow: 'hidden',
-        boxSizing: 'border-box',
-        padding: '12px'
+        boxSizing: 'border-box'
       }}
     >
-      {/* Box di stato a 2 righe responsive */}
+      {/* Box di stato sovrapposto leggero */}
       <div
         style={{
           position: 'absolute',
-          top: 12,
-          left: 12,
+          top: '12px',
+          left: '12px',
           display: 'flex',
           flexDirection: 'column',
           gap: '2px',
-          maxWidth: 'calc(100% - 24px)',
           color: '#10b981',
           fontFamily: 'monospace',
           fontSize: '11px',
@@ -261,17 +259,17 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
         </span>
       </div>
 
-      {/* Canvas proporzionato a entrambe le dimensioni dello schermo */}
+      {/* Canvas massimizzato sia per landscape che desktop fullscreen */}
       <canvas
         ref={canvasRef}
-        width={600}
-        height={600}
+        width={800}
+        height={800}
         style={{
-          width: 'min(85vw, 70vh)',
-          height: 'min(85vw, 70vh)',
+          width: 'min(92vw, 86vh)',
+          height: 'min(92vw, 86vh)',
           aspectRatio: '1 / 1',
           borderRadius: '50%',
-          boxShadow: '0 0 25px rgba(16, 185, 129, 0.15)',
+          boxShadow: '0 0 35px rgba(16, 185, 129, 0.18)',
           border: '2px solid #1e293b'
         }}
       />
