@@ -1,9 +1,43 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import AeroRadar from './components/AeroRadar'
+
+// --- Helper Fullscreen con prefissi per compatibilità browser vecchi (Android 7 / webkit) ---
+function getFullscreenElement() {
+  return (
+    document.fullscreenElement ||
+    document.webkitFullscreenElement ||
+    document.mozFullScreenElement ||
+    document.msFullscreenElement ||
+    null
+  )
+}
+
+function requestFullscreenCompat(el) {
+  const fn =
+    el.requestFullscreen ||
+    el.webkitRequestFullscreen ||
+    el.webkitRequestFullScreen ||
+    el.mozRequestFullScreen ||
+    el.msRequestFullscreen
+  if (fn) return fn.call(el)
+  return Promise.reject(new Error('Fullscreen API non supportata'))
+}
+
+function exitFullscreenCompat() {
+  const fn =
+    document.exitFullscreen ||
+    document.webkitExitFullscreen ||
+    document.webkitCancelFullScreen ||
+    document.mozCancelFullScreen ||
+    document.msExitFullscreen
+  if (fn) return fn.call(document)
+  return Promise.reject(new Error('Fullscreen API non supportata'))
+}
 
 export default function App() {
   const [position, setPosition] = useState({ lat: 44.08, lon: 9.85 }) // Default: Golfo della Spezia / Tirreno
   const [rangeNm, setRangeNm] = useState(30)
+  const [isFullscreen, setIsFullscreen] = useState(false)
 
   // Geolocalizzazione Utente
   useEffect(() => {
@@ -14,6 +48,33 @@ export default function App() {
         },
         (err) => console.warn('GPS non disponibile, uso posizione predefinita:', err.message)
       )
+    }
+  }, [])
+
+  // Ascolta i cambi di stato fullscreen (anche da tasto indietro del tablet)
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!getFullscreenElement())
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange)
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange)
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange)
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange)
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange)
+    }
+  }, [])
+
+  const toggleFullscreen = useCallback(() => {
+    if (getFullscreenElement()) {
+      exitFullscreenCompat().catch(() => {})
+    } else {
+      requestFullscreenCompat(document.documentElement).catch(() => {
+        // Fullscreen non disponibile su questo dispositivo/browser: ignora silenziosamente
+      })
     }
   }, [])
 
@@ -39,8 +100,40 @@ export default function App() {
             {r} NM
           </button>
         ))}
-      </header>
 
+        <button
+          onClick={toggleFullscreen}
+          title={isFullscreen ? 'Esci da schermo intero' : 'Schermo intero'}
+          aria-label={isFullscreen ? 'Esci da schermo intero' : 'Schermo intero'}
+          style={{
+            background: isFullscreen ? '#10b981' : '#0f172a',
+            color: isFullscreen ? '#020617' : '#94a3b8',
+            border: '1px solid #1e293b',
+            padding: '5px',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          {isFullscreen ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+              <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+              <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+              <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+            </svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 8V5a2 2 0 0 1 2-2h3" />
+              <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+              <path d="M21 16v3a2 2 0 0 1-2 2h-3" />
+              <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+            </svg>
+          )}
+        </button>
+      </header>
       <AeroRadar userLat={position.lat} userLon={position.lon} rangeNm={rangeNm} />
     </div>
   )
