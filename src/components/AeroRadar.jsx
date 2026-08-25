@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 
 export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 30 }) {
   const canvasRef = useRef(null)
-  const [status, setStatus] = useState('Inizializzazione...')
+  const [statusInfo, setStatusInfo] = useState({ label: 'INIZIALIZZAZIONE', detail: 'Attesa ciclo dati...' })
 
   const aircraftsRef = useRef([])
   const sweepAngleRef = useRef(0)
@@ -18,7 +18,6 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
         const lonStr = userLon.toFixed(4)
         const targetUrl = `https://opendata.adsb.fi/api/v3/lat/${latStr}/lon/${lonStr}/dist/${rangeNm}`
         
-        // Timestamp univoco per bypassare la cache locale del browser
         const timestamp = Date.now()
         const url = import.meta.env.PROD
           ? `${MY_WORKER_URL}?url=${encodeURIComponent(targetUrl)}&_t=${timestamp}`
@@ -48,16 +47,16 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
 
           if (parsed.length > 0) {
             aircraftsRef.current = parsed
-            setStatus(`ONLINE • ${parsed.length} velivoli agganciati`)
+            setStatusInfo({ label: 'ONLINE', detail: `${parsed.length} velivoli agganciati` })
           } else if (aircraftsRef.current.length > 0) {
-            setStatus(`ONLINE • ${aircraftsRef.current.length} velivoli (mantenimento)`)
+            setStatusInfo({ label: 'ONLINE', detail: `${aircraftsRef.current.length} velivoli (mantenimento)` })
           } else {
-            setStatus('ONLINE • 0 velivoli nell\'area')
+            setStatusInfo({ label: 'ONLINE', detail: '0 velivoli nell\'area' })
           }
         }
       } catch (err) {
         if (isMounted && aircraftsRef.current.length === 0) {
-          setStatus('SINCRO IN CORSO • Attesa ciclo')
+          setStatusInfo({ label: 'SINCRO IN CORSO', detail: 'Attesa ripristino' })
         }
       }
     }
@@ -71,7 +70,7 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
     }
   }, [userLat, userLon, rangeNm])
 
-  // 2. Loop Canvas a 60 FPS con movimento continuo (Dead Reckoning)
+  // 2. Loop Canvas a 60 FPS
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -155,7 +154,6 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
 
       // Tracciamento ed Estrapolazione del Movimento
       aircraftsRef.current.forEach((ac) => {
-        // Calcola la distanza percorsa in NM dall'ultimo aggiornamento ricevibile
         const dtSeconds = Math.max(0, (now - ac.lastUpdated) / 1000)
         const distTraveledNm = (ac.velocityKts / 3600) * dtSeconds
 
@@ -222,39 +220,56 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
     <div
       style={{
         position: 'relative',
-        width: '100%',
-        height: '100%',
+        width: '100vw',
+        height: '100vh',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        background: '#020617'
+        background: '#020617',
+        overflow: 'hidden',
+        boxSizing: 'border-box',
+        padding: '12px'
       }}
     >
+      {/* Box di stato a 2 righe responsive */}
       <div
         style={{
           position: 'absolute',
-          top: 16,
-          left: 16,
+          top: 12,
+          left: 12,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '2px',
+          maxWidth: 'calc(100% - 24px)',
           color: '#10b981',
           fontFamily: 'monospace',
-          fontSize: '12px',
-          background: 'rgba(2,6,23,0.85)',
-          padding: '6px 12px',
-          borderRadius: '4px',
-          border: '1px solid #1e293b'
+          fontSize: '11px',
+          background: 'rgba(2, 6, 23, 0.85)',
+          padding: '6px 10px',
+          borderRadius: '6px',
+          border: '1px solid #1e293b',
+          zIndex: 10,
+          pointerEvents: 'none'
         }}
       >
-        {status}
+        <span style={{ fontWeight: 'bold', letterSpacing: '0.5px' }}>
+          • {statusInfo.label}
+        </span>
+        <span style={{ color: '#94a3b8', fontSize: '10px' }}>
+          {statusInfo.detail}
+        </span>
       </div>
 
+      {/* Canvas proporzionato a entrambe le dimensioni dello schermo */}
       <canvas
         ref={canvasRef}
         width={600}
         height={600}
         style={{
-          maxWidth: '95vw',
-          maxHeight: '95vw',
+          width: 'min(85vw, 70vh)',
+          height: 'min(85vw, 70vh)',
+          aspectRatio: '1 / 1',
           borderRadius: '50%',
           boxShadow: '0 0 25px rgba(16, 185, 129, 0.15)',
           border: '2px solid #1e293b'
