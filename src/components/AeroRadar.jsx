@@ -7,7 +7,7 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
   const aircraftsRef = useRef([])
   const sweepAngleRef = useRef(0)
 
-  // 1. Fetching con Cache-Buster
+  // 1. Fetching con API sicura e Cache-Buster
   useEffect(() => {
     let isMounted = true
     const MY_WORKER_URL = 'https://aeroradar-proxy.daniele-antoniazzi1.workers.dev'
@@ -16,11 +16,11 @@ export default function AeroRadar({ userLat = 44.08, userLon = 9.85, rangeNm = 3
       try {
         const latStr = userLat.toFixed(4)
         const lonStr = userLon.toFixed(4)
-        const targetUrl = `https://opendata.adsb.fi/api/v3/lat/${latStr}/lon/${lonStr}/dist/${rangeNm}`
-        
         const timestamp = Date.now()
+
+        // Invia i soli parametri lat, lon e dist invece dell'URL completo
         const url = import.meta.env.PROD
-          ? `${MY_WORKER_URL}?url=${encodeURIComponent(targetUrl)}&_t=${timestamp}`
+          ? `${MY_WORKER_URL}?lat=${latStr}&lon=${lonStr}&dist=${rangeNm}&_t=${timestamp}`
           : `/api-adsb/api/v3/lat/${latStr}/lon/${lonStr}/dist/${rangeNm}?_t=${timestamp}`
 
         const res = await fetch(url, { cache: 'no-store' })

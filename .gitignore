@@ -7,10 +7,20 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies & Build
 node_modules
 dist
 dist-ssr
+
+# Environment & Secrets (CRITICO PER LA SICUREZZA)
+.env
+.env.*
+!.env.example
 *.local
+
+# Cloudflare & Wrangler CLI
+.wrangler/
+.dev.vars
 
 # Editor directories and files
 .vscode/*
